@@ -18,6 +18,7 @@ from homeassistant.helpers.aiohttp_client import (
     async_aiohttp_proxy_stream)
 
 _LOGGER = logging.getLogger(__name__)
+logging.getLogger('requests.packages.urllib3.connectionpool').setLevel(logging.ERROR)
 
 DEPENDENCIES = ['ffmpeg']
 DEFAULT_NAME = 'FFmpeg'

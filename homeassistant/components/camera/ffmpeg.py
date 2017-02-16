@@ -19,6 +19,7 @@ from homeassistant.const import CONF_NAME
 DEPENDENCIES = ['ffmpeg']
 
 _LOGGER = logging.getLogger(__name__)
+logging.getLogger('requests.packages.urllib3.connectionpool').setLevel(logging.ERROR)
 
 DEFAULT_NAME = 'FFmpeg'
 

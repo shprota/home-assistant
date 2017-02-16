@@ -34,7 +34,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 
 def get_scanner(hass, config):
     """Validate the configuration and return a TP-Link scanner."""
-    for cls in [Tplink4DeviceScanner, Tplink3DeviceScanner,
+    for cls in [Tplink5DeviceScanner, Tplink4DeviceScanner, Tplink3DeviceScanner,
                 Tplink2DeviceScanner, TplinkDeviceScanner]:
         scanner = cls(config[DOMAIN])
         if scanner.success_init:
@@ -333,3 +333,87 @@ class Tplink4DeviceScanner(TplinkDeviceScanner):
 
             self.last_results = [mac.replace("-", ":") for mac in mac_results]
             return True
+
+
+class Tplink5DeviceScanner(TplinkDeviceScanner):
+    """This class queries an Archer C2 router with TP-Link firmware 0.9.1 1.0 v0032.1 Build 150327 Rel.45223n."""
+    def __init__(self, config):
+        """Initialize the scanner."""
+        self.credentials = None
+        self.url = None
+        self.rurl = None
+        self.query = None
+        self.headers = None
+        super(Tplink5DeviceScanner, self).__init__(config)
+
+    def init_instance(self):
+        self.parse_macs = re.compile('[0-9A-F]{2}:[0-9A-F]{2}:[0-9A-F]{2}:' +
+                                     '[0-9A-F]{2}:[0-9A-F]{2}:[0-9A-F]{2}')
+
+        credentials = '{}:{}'.format(self.username, self.password).encode('utf')
+        # Encode the credentials to be sent as a cookie.
+        self.credentials = base64.b64encode(credentials).decode('utf')
+
+        self.url = 'http://{}/cgi?6'.format(self.host)
+        self.rurl = 'http://{}/cgi?7'.format(self.host)
+
+        self.query = "[LAN_WLAN_ASSOC_DEV#0,0,0,0,0,0#1,{},0,0,0,0]0,4" \
+                     "\r\nAssociatedDeviceMACAddress" \
+                     "\r\nX_TP_TotalPacketsSent\r\nX_TP_TotalPacketsReceived\r\nX_TP_HostName\r\n "
+
+        self.headers = {
+            "referer": "http://{}/mainFrame.htm".format(self.host),
+            "Authorization": "Basic {}".format(self.credentials),
+            "Cookie": "Authorization=Basic {}".format(self.credentials),
+            "Content-Type": "text/plain",
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.87 "
+                          "Safari/537.36",
+            "Accept-Language": "en,en-US;q=0.8"
+        }
+
+    def scan_devices(self):
+        """Scan for new devices and return a list with found device IDs."""
+        self._update_info()
+        return self.last_results
+
+    # pylint: disable=no-self-use
+    def get_device_name(self, device):
+        """The firmware doesn't save the name of the wireless device."""
+        return None
+
+    @Throttle(MIN_TIME_BETWEEN_SCANS)
+    def _update_info(self):
+        """Ensure the information from the TP-Link router is up to date.
+
+        Return boolean if scanning successful.
+        """
+        if not self.credentials:
+            self.init_instance()
+
+        with self.lock:
+            _LOGGER.info("Loading wireless clients...")
+
+            mac_results = []
+
+            # Check both the 2.4GHz and 5GHz client list URLs
+            for i in (1, 2):
+                x = requests.post(self.rurl, data="[ACT_WLAN_UPDATE_ASSOC#1,{},0,0,0,0#0,0,0,0,0,0]0,0\r\n".format(i),
+                              headers=self.headers)
+                print(x.text)
+                page = requests.post(self.url, data=self.query.format(i), headers=self.headers)
+                mac_results.extend(self.parse_macs.findall(page.text))
+
+            print(mac_results)
+
+            if not mac_results:
+                return False
+
+            self.last_results = mac_results
+            return True
+
+
+if __name__ == '__main__':
+    sc = get_scanner(None, {"device_tracker":
+                                 {CONF_HOST: "192.168.0.1", CONF_USERNAME: "admin", CONF_PASSWORD: "admin"}})
+    # sc = Tplink5DeviceScanner({CONF_HOST: "192.168.0.1", CONF_USERNAME: "admin", CONF_PASSWORD: "admin"})
+    print(sc.scan_devices())
